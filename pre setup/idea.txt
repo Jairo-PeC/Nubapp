@@ -1,0 +1,8 @@
+Problema: Encontrar una manera, fácil y ágil,  para agendar citas a un nutricionista experto (de un pool de profesionales) según la necesidad del usuario.
+Usuario: Pacientes y nutricionistas.
+Qué hará la app: 
+Permitir a nutricionistas inscribirse en la app donde pueden hacer énfasis en sus especialidades y servicios.
+Permitir a pacientes inscribirse en la app.
+ El paciente puede usar un chat el cual le recomendará nutricionistas especializados de acuerdo a su necesidad.
+Pieza de IA: La API de Gemini.
+Enlace a la versión 0: (agrega luego de crear la url en streamlit)

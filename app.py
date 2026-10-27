@@ -1,0 +1,331 @@
+import hashlib
+import json
+import os
+import random
+import secrets
+import sqlite3
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import streamlit as st
+import streamlit.components.v1 as components
+
+MODELO = "gemini-2.5-flash"  # se usará cuando conectemos el chat con Gemini
+DB_PATH = Path(__file__).parent / "nubapp.db"
+DIST = Path(__file__).parent / "frontend" / "dist"
+
+ESPECIALIDADES = [
+    ("Pediátrico", "pediatrico"),
+    ("Oncológico", "oncologico"),
+    ("TCA", "tca"),
+    ("Endocrino-obesidad", "endocrino"),
+    ("Enfermedad renal", "renal"),
+    ("Deportivo", "deportivo"),
+    ("Vegetarianismo/veganismo", "vegano"),
+    ("Embarazo y maternidad", "embarazo"),
+]
+
+# (nombre, titular, bio, modalidad, ciudad, idiomas, tarifa, especialidades, servicios)
+NUTRICIONISTAS = [
+    ("Valeria Montoya", "Alimentación infantil sin batallas en la mesa",
+     "Ayudo a familias con niños selectivos, alergias y etapas de crecimiento. Trabajo con juegos y recetas fáciles.",
+     "ambas", "Bogotá", "Español, Inglés", 35, [1, 8],
+     [("Primera consulta pediátrica", "Valoración completa y plan para toda la familia", 50, 35),
+      ("Seguimiento mensual", "Control de crecimiento y ajustes", 30, 22)]),
+    ("Andrés Carvajal", "Nutrición que acompaña durante el tratamiento oncológico",
+     "Cuido el estado nutricional antes, durante y después de quimioterapia o radioterapia, en coordinación con tu equipo médico.",
+     "online", "Medellín", "Español", 45, [2],
+     [("Valoración nutricional oncológica", "Revisión de síntomas, apetito y peso", 60, 45),
+      ("Seguimiento semanal", "Ajustes ante náuseas, mucositis o pérdida de peso", 30, 28)]),
+    ("Lucía Ferrer", "Una relación más tranquila con la comida",
+     "Acompaño a personas con anorexia, bulimia o atracones desde un enfoque respetuoso y sin juicios, junto a su equipo de salud mental.",
+     "ambas", "Madrid", "Español, Catalán", 50, [3],
+     [("Primera sesión de acogida", "Conversamos sin presión y definimos objetivos", 60, 50),
+      ("Sesión de seguimiento", "Trabajo en comidas, emociones y hábitos", 45, 40)]),
+    ("Martín Okafor", "Diabetes, obesidad y rendimiento con datos claros",
+     "Especialista en resistencia a la insulina, diabetes tipo 2 y pérdida de peso sostenible. También entreno a corredores populares.",
+     "online", "Ciudad de México", "Español, Inglés", 40, [4, 6],
+     [("Consulta endocrino-metabólica", "Análisis de glucosa, hábitos y objetivos", 60, 40),
+      ("Plan de pérdida de peso", "Plan realista con revisiones quincenales", 45, 32)]),
+    ("Camila Restrepo", "Comer bien con enfermedad renal crónica",
+     "Adapto la alimentación a cada etapa de la enfermedad renal y a la diálisis: potasio, fósforo, sodio y líquidos.",
+     "ambas", "Cali", "Español", 42, [5],
+     [("Primera consulta renal", "Revisión de analíticas y menú adaptado", 60, 42),
+      ("Control de diálisis", "Ajuste de dieta según tus resultados", 30, 26)]),
+    ("Diego Salvatierra", "Nutrición para entrenar mejor y recuperarte antes",
+     "Trabajo con ciclistas, runners y gente de gimnasio: carga de carbohidratos, hidratación, suplementación y composición corporal.",
+     "ambas", "Barcelona", "Español, Inglés", 38, [6],
+     [("Valoración deportiva", "Composición corporal y plan de entrenamiento", 60, 38),
+      ("Estrategia de competición", "Plan para tu carrera o torneo", 45, 34)]),
+    ("Noa Benedetti", "Dieta vegetal completa, sin carencias",
+     "Planes vegetarianos y veganes para cualquier edad, con foco en B12, hierro, proteínas y recetas de cada día.",
+     "online", "Buenos Aires", "Español, Italiano", 33, [7, 1],
+     [("Transición a la dieta vegetal", "Plan paso a paso y lista de compra", 50, 33),
+      ("Revisión de analíticas", "Hierro, B12 y vitamina D bajo control", 30, 20)]),
+    ("Irene Quispe", "Acompañamiento desde la búsqueda del embarazo hasta la lactancia",
+     "Nutrición en fertilidad, embarazo, diabetes gestacional y postparto. Te explico cada paso sin alarmismo.",
+     "ambas", "Lima", "Español, Quechua", 36, [8, 4],
+     [("Consulta preconcepcional", "Preparar el cuerpo antes del embarazo", 50, 36),
+      ("Plan de embarazo y lactancia", "Seguimiento por trimestres", 45, 30)]),
+]
+
+PACIENTES_DEMO = [("Sofía Ramírez", "sofia@example.com"), ("Mateo Gómez", "mateo@example.com")]
+CLAVE_DEMO = "demo1234"
+
+
+# ---------- base de datos ----------
+
+def db():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
+    return con
+
+
+def hash_clave(clave, sal=None):
+    sal = sal or secrets.token_bytes(16)
+    h = hashlib.scrypt(clave.encode(), salt=sal, n=2**14, r=8, p=1)
+    return sal.hex() + ":" + h.hex()
+
+
+def clave_ok(clave, guardada):
+    sal, h = guardada.split(":")
+    return secrets.compare_digest(hash_clave(clave, bytes.fromhex(sal)), guardada)
+
+
+def crear_tablas(con):
+    con.executescript("""
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
+        nombre TEXT NOT NULL, rol TEXT NOT NULL CHECK (rol IN ('paciente','nutricionista')),
+        creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS nutricionistas (
+        usuario_id INTEGER PRIMARY KEY REFERENCES usuarios(id), titular TEXT, bio TEXT,
+        modalidad TEXT CHECK (modalidad IN ('online','presencial','ambas')),
+        ciudad TEXT, idiomas TEXT, tarifa INTEGER, foto_url TEXT);
+    CREATE TABLE IF NOT EXISTS especialidades (
+        id INTEGER PRIMARY KEY, nombre TEXT UNIQUE NOT NULL, clave TEXT UNIQUE NOT NULL);
+    CREATE TABLE IF NOT EXISTS nutricionista_especialidad (
+        nutricionista_id INTEGER REFERENCES nutricionistas(usuario_id),
+        especialidad_id INTEGER REFERENCES especialidades(id),
+        PRIMARY KEY (nutricionista_id, especialidad_id));
+    CREATE TABLE IF NOT EXISTS servicios (
+        id INTEGER PRIMARY KEY, nutricionista_id INTEGER REFERENCES nutricionistas(usuario_id),
+        nombre TEXT NOT NULL, descripcion TEXT, duracion_min INTEGER, precio INTEGER);
+    CREATE TABLE IF NOT EXISTS disponibilidad (
+        id INTEGER PRIMARY KEY, nutricionista_id INTEGER REFERENCES nutricionistas(usuario_id),
+        inicio TEXT NOT NULL, fin TEXT NOT NULL, reservado INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS citas (
+        id INTEGER PRIMARY KEY, paciente_id INTEGER REFERENCES usuarios(id),
+        nutricionista_id INTEGER REFERENCES nutricionistas(usuario_id),
+        servicio_id INTEGER REFERENCES servicios(id),
+        disponibilidad_id INTEGER UNIQUE REFERENCES disponibilidad(id),
+        estado TEXT NOT NULL DEFAULT 'confirmada' CHECK (estado IN ('confirmada','cancelada')),
+        motivo TEXT, creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    """)
+
+
+def cargar_ejemplos(con):
+    """Datos inventados. Se ejecuta solo si la base está vacía; los huecos son relativos a hoy."""
+    if con.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]:
+        return
+    con.executemany("INSERT INTO especialidades (nombre, clave) VALUES (?, ?)", ESPECIALIDADES)
+    clave = hash_clave(CLAVE_DEMO)
+    for nombre, email in PACIENTES_DEMO:
+        con.execute("INSERT INTO usuarios (email, password_hash, nombre, rol) VALUES (?,?,?,'paciente')",
+                    (email, clave, nombre))
+    rnd = random.Random(7)
+    hoy = datetime.now().replace(minute=0, second=0, microsecond=0)
+    for nombre, titular, bio, modalidad, ciudad, idiomas, tarifa, specs, servicios in NUTRICIONISTAS:
+        email = nombre.lower().replace(" ", ".").replace("é", "e").replace("í", "i").replace("á", "a") + "@example.com"
+        uid = con.execute("INSERT INTO usuarios (email, password_hash, nombre, rol) VALUES (?,?,?,'nutricionista')",
+                          (email, clave, nombre)).lastrowid
+        con.execute("INSERT INTO nutricionistas VALUES (?,?,?,?,?,?,?,NULL)",
+                    (uid, titular, bio, modalidad, ciudad, idiomas, tarifa))
+        con.executemany("INSERT INTO nutricionista_especialidad VALUES (?,?)", [(uid, s) for s in specs])
+        con.executemany("INSERT INTO servicios (nutricionista_id, nombre, descripcion, duracion_min, precio) VALUES (?,?,?,?,?)",
+                        [(uid, *s) for s in servicios])
+        for dia in range(1, 15):
+            fecha = hoy + timedelta(days=dia)
+            if fecha.weekday() > 4:
+                continue
+            for hora in rnd.sample([9, 10, 11, 12, 15, 16, 17, 18], 4):
+                ini = fecha.replace(hour=hora)
+                con.execute("INSERT INTO disponibilidad (nutricionista_id, inicio, fin, reservado) VALUES (?,?,?,?)",
+                            (uid, ini.isoformat(), (ini + timedelta(hours=1)).isoformat(), int(rnd.random() < 0.2)))
+
+
+def iniciar_db():
+    with db() as con:
+        crear_tablas(con)
+        cargar_ejemplos(con)
+
+
+def listar_nutricionistas():
+    with db() as con:
+        filas = con.execute("""
+            SELECT u.id, u.nombre, n.titular, n.bio, n.modalidad, n.ciudad, n.idiomas, n.tarifa
+            FROM nutricionistas n JOIN usuarios u ON u.id = n.usuario_id ORDER BY u.nombre""").fetchall()
+        salida = []
+        for f in filas:
+            d = dict(f)
+            d["especialidades"] = [r["clave"] for r in con.execute(
+                """SELECT e.clave FROM nutricionista_especialidad ne
+                   JOIN especialidades e ON e.id = ne.especialidad_id WHERE ne.nutricionista_id = ?""", (f["id"],))]
+            d["servicios"] = [dict(r) for r in con.execute(
+                "SELECT id, nombre, descripcion, duracion_min, precio FROM servicios WHERE nutricionista_id = ?", (f["id"],))]
+            d["huecos"] = [dict(r) for r in con.execute(
+                """SELECT id, inicio FROM disponibilidad
+                   WHERE nutricionista_id = ? AND reservado = 0 AND inicio > ? ORDER BY inicio""",
+                (f["id"], datetime.now().isoformat()))]
+            salida.append(d)
+        return salida
+
+
+def citas_de(usuario):
+    if not usuario:
+        return []
+    campo = "c.paciente_id" if usuario["rol"] == "paciente" else "c.nutricionista_id"
+    with db() as con:
+        return [dict(r) for r in con.execute(f"""
+            SELECT c.id, c.estado, c.motivo, d.inicio, s.nombre AS servicio,
+                   un.nombre AS nutricionista, up.nombre AS paciente
+            FROM citas c JOIN disponibilidad d ON d.id = c.disponibilidad_id
+            JOIN servicios s ON s.id = c.servicio_id
+            JOIN usuarios un ON un.id = c.nutricionista_id
+            JOIN usuarios up ON up.id = c.paciente_id
+            WHERE {campo} = ? ORDER BY d.inicio""", (usuario["id"],))]
+
+
+# ---------- acciones ----------
+
+def iniciar_sesion(email, clave):
+    with db() as con:
+        u = con.execute("SELECT * FROM usuarios WHERE email = ?", (email.strip().lower(),)).fetchone()
+    if u and clave_ok(clave, u["password_hash"]):
+        return {"id": u["id"], "nombre": u["nombre"], "rol": u["rol"], "email": u["email"]}
+    return None
+
+
+def registrar(nombre, email, clave, rol):
+    if rol not in ("paciente", "nutricionista"):
+        return None, "Elige si eres paciente o nutricionista."
+    if len(clave) < 8 or "@" not in email or not nombre.strip():
+        return None, "Revisa los datos: la contraseña necesita al menos 8 caracteres."
+    try:
+        with db() as con:
+            con.execute("INSERT INTO usuarios (email, password_hash, nombre, rol) VALUES (?,?,?,?)",
+                        (email.strip().lower(), hash_clave(clave), nombre.strip(), rol))
+    except sqlite3.IntegrityError:
+        return None, "Ya existe una cuenta con ese correo."
+    return iniciar_sesion(email, clave), None
+
+
+def reservar(usuario, hueco_id, servicio_id, motivo):
+    if not usuario or usuario["rol"] != "paciente":
+        return "Inicia sesión como paciente para reservar."
+    try:
+        with db() as con:
+            h = con.execute("SELECT nutricionista_id, reservado FROM disponibilidad WHERE id = ?", (hueco_id,)).fetchone()
+            if not h or h["reservado"]:
+                return "Ese horario ya no está disponible. Elige otro."
+            con.execute("UPDATE disponibilidad SET reservado = 1 WHERE id = ?", (hueco_id,))
+            con.execute("""INSERT INTO citas (paciente_id, nutricionista_id, servicio_id, disponibilidad_id, motivo)
+                           VALUES (?,?,?,?,?)""", (usuario["id"], h["nutricionista_id"], servicio_id, hueco_id, motivo[:300]))
+    except sqlite3.Error:
+        return "No pudimos guardar la cita. Inténtalo de nuevo."
+    return None
+
+
+# Provisional: palabras clave → especialidad. Se sustituirá por Gemini (MODELO).
+PALABRAS = {
+    "pediatrico": ["hijo", "hija", "niño", "niña", "bebé", "infantil", "selectivo"],
+    "oncologico": ["cáncer", "cancer", "quimio", "oncolog", "tumor"],
+    "tca": ["anorexia", "bulimia", "atracón", "atracon", "trastorno", "comida emocional"],
+    "endocrino": ["diabetes", "peso", "obesidad", "adelgazar", "insulina", "colesterol"],
+    "renal": ["riñón", "rinon", "renal", "diálisis", "dialisis"],
+    "deportivo": ["ciclis", "corr", "gimnasio", "entren", "rendimiento", "maratón", "musculo", "músculo"],
+    "vegano": ["vegano", "vegetarian", "vegetal"],
+    "embarazo": ["embaraz", "lactancia", "fertilidad", "postparto", "gestacional"],
+}
+
+
+def recomendar_demo(texto):
+    t = texto.lower()
+    claves = [c for c, ps in PALABRAS.items() if any(p in t for p in ps)]
+    if not claves:
+        return {"mensaje": "Por ahora solo puedo ayudarte a encontrar un nutricionista. Cuéntame qué necesitas: por ejemplo, un objetivo deportivo, una condición de salud o una etapa de la vida.",
+                "ids": []}
+    ids = [n["id"] for n in listar_nutricionistas() if set(n["especialidades"]) & set(claves)][:3]
+    return {"mensaje": "Por lo que cuentas, estos especialistas pueden ayudarte. Elige uno para ver su perfil y sus horarios.",
+            "ids": ids, "claves": claves}
+
+
+# ---------- interfaz ----------
+
+if os.environ.get("NUBAPP_DEV"):
+    interfaz = components.declare_component("nubapp_ui", url="http://localhost:5173")
+else:
+    interfaz = components.declare_component("nubapp_ui", path=str(DIST))
+
+st.set_page_config(page_title="Nubapp", page_icon="🥑", layout="wide", initial_sidebar_state="collapsed")
+st.markdown("""<style>
+#MainMenu, header, footer {visibility: hidden;}
+.block-container {padding: 0 !important; max-width: 100% !important;}
+iframe {border: 0;}
+</style>""", unsafe_allow_html=True)
+
+iniciar_db()
+s = st.session_state
+s.setdefault("pantalla", "inicio")
+s.setdefault("nutri_id", None)
+s.setdefault("usuario", None)
+s.setdefault("chat", [])
+s.setdefault("aviso", None)
+s.setdefault("ultimo_evento", None)
+
+evento = interfaz(
+    pantalla=s.pantalla,
+    especialidades=[{"nombre": n, "clave": c} for n, c in ESPECIALIDADES],
+    nutricionistas=listar_nutricionistas(),
+    nutri_id=s.nutri_id,
+    usuario=s.usuario,
+    citas=citas_de(s.usuario),
+    chat=s.chat,
+    aviso=s.aviso,
+    key="nubapp_ui",
+    default=None,
+)
+
+if evento and evento.get("id") != s.ultimo_evento:
+    s.ultimo_evento = evento["id"]
+    tipo, datos = evento.get("tipo"), evento.get("datos", {})
+    s.aviso = None
+    if tipo == "ir":
+        s.pantalla = datos.get("pantalla", "inicio")
+        s.nutri_id = datos.get("nutri_id", s.nutri_id)
+    elif tipo == "chat":
+        texto = str(datos.get("texto", ""))[:500]
+        s.chat += [{"rol": "paciente", "texto": texto}, {"rol": "nubi", **recomendar_demo(texto)}]
+        s.pantalla = "chat"
+    elif tipo == "entrar":
+        u = iniciar_sesion(datos.get("email", ""), datos.get("clave", ""))
+        if u:
+            s.usuario, s.pantalla = u, "panel"
+        else:
+            s.aviso = {"tipo": "error", "texto": "Correo o contraseña incorrectos."}
+    elif tipo == "registrar":
+        u, error = registrar(datos.get("nombre", ""), datos.get("email", ""), datos.get("clave", ""), datos.get("rol", ""))
+        if u:
+            s.usuario, s.pantalla = u, "panel"
+        else:
+            s.aviso = {"tipo": "error", "texto": error}
+    elif tipo == "salir":
+        s.usuario, s.pantalla, s.chat = None, "inicio", []
+    elif tipo == "reservar":
+        error = reservar(s.usuario, datos.get("hueco_id"), datos.get("servicio_id"), str(datos.get("motivo", "")))
+        if error:
+            s.aviso = {"tipo": "error", "texto": error}
+        else:
+            s.pantalla, s.aviso = "panel", {"tipo": "ok", "texto": "Tu cita está confirmada."}
+    st.rerun()
