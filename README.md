@@ -5,7 +5,7 @@
 
 ## Pitch
 
-Encontrar al nutricionista adecuado es lento: hay muchos perfiles y casi nadie sabe qué especialidad necesita. Nubapp reúne a nutricionistas de varias especialidades (pediátrico, oncológico, TCA, endocrino-obesidad, enfermedad renal, deportivo, vegetarianismo/veganismo, embarazo y maternidad) y deja que el paciente reserve cita en un minuto. La IA (API de Gemini) conversa con el paciente, entiende su necesidad y le recomienda de 1 a 3 especialistas del pool, explicando por qué, sin dar diagnósticos ni dietas. En las pruebas, el chat recomendó a la especialidad correcta en los 4 casos que probamos, incluido uno fuera de tema que rechazó con amabilidad; y aprendimos que el prompt necesitaba una regla explícita para que los nombres que cita coincidan siempre con las tarjetas que muestra. Lo siguiente sería una base de datos persistente, recordatorios por correo y pagos.
+Encontrar al nutricionista adecuado es lento: hay muchos perfiles y casi nadie sabe qué especialidad necesita. Nubapp reúne a nutricionistas de varias especialidades (pediátrico, oncológico, TCA, endocrino-obesidad, enfermedad renal, deportivo, vegetarianismo/veganismo, embarazo y maternidad) y deja que el paciente reserve cita en un minuto. La IA (API de Gemini) conversa con el paciente, entiende su necesidad y le recomienda de 1 a 3 especialistas del pool, explicando por qué, sin dar diagnósticos ni dietas. En las pruebas, el chat recomendó a la especialidad correcta en los 5 casos que probamos, incluido uno fuera de tema que rechazó con amabilidad; y aprendimos que el prompt necesitaba una regla explícita para que los nombres que cita coincidan siempre con las tarjetas que muestra. Lo siguiente sería una base de datos persistente, recordatorios por correo y pagos.
 
 ## El problema
 
@@ -31,7 +31,7 @@ Si se acaba la cuota, no hay conexión o la respuesta no es válida, el chat cae
 
 Trabajé con Claude Code, con las skills `frontend-design` y `grill-me`, el plugin `ponytail` y el MCP `chrome-devtools` para ver y depurar la interfaz en un navegador real. El fichero de contexto del agente es [CLAUDE.md](CLAUDE.md).
 
-La app es Python 3.12 con Streamlit (requisito del template de la maestría) y una interfaz en React que se carga como componente de Streamlit. Streamlit Cloud no ejecuta Node, por eso `frontend/dist/` (React compilado con Vite) está en el repositorio. Toda la lógica (login con `scrypt`, SQLite, Gemini, reservas) vive en `app.py`; React solo muestra datos y devuelve eventos. La base es SQLite con el módulo estándar. En Streamlit Cloud el disco es efímero: las cuentas y citas nuevas se pierden al reiniciar y los datos de ejemplo se vuelven a cargar. La sesión vive en Streamlit, así que recargar la página la cierra.
+La app es Python 3.14 con Streamlit (requisito del template de la maestría) y una interfaz en React que se carga como componente de Streamlit. Streamlit Cloud no ejecuta Node, por eso `frontend/dist/` (React compilado con Vite) está en el repositorio. Toda la lógica (login con `scrypt`, SQLite, Gemini, reservas) vive en `app.py`; React solo muestra datos y devuelve eventos. La base es SQLite con el módulo estándar. En Streamlit Cloud el disco es efímero: las cuentas y citas nuevas se pierden al reiniciar y los datos de ejemplo se vuelven a cargar. La sesión vive en Streamlit, así que recargar la página la cierra.
 
 Prompts que más me sirvieron:
 
@@ -91,3 +91,7 @@ Chat con Gemini recomendando especialistas (sesión de paciente de prueba):
 Caso límite: intentar usar el chat sin haber iniciado sesión (app desplegada).
 
 ![Chat sin sesión](docs/capturas/chat-sin-sesion.png)
+
+Un momento del trabajo con la IA: la sesión de Claude Code en VS Code.
+
+![Trabajando con la IA en VS Code](docs/capturas/trabajando%20con%20la%20IA%20en%20VS%20Code.png)

@@ -25,9 +25,9 @@ Aunque la v0 sea un mockup, el objetivo final es **autenticación real** (regist
 
 Stack **muy básico**, a propósito. No añadas piezas que no hagan falta.
 
-**Restricción fundamental:** el stack base viene del template de una clase de la maestría y NO se puede cambiar: Python 3.12 + Streamlit + API de Gemini (`google-genai`), desplegado en Streamlit Community Cloud. Nada de sustituir Streamlit por otro framework, ni de añadir un backend aparte (Node, Express, FastAPI…).
+**Restricción fundamental:** el stack base viene del template de una clase de la maestría y NO se puede cambiar: Python 3.14 + Streamlit + API de Gemini (`google-genai`), desplegado en Streamlit Community Cloud. Nada de sustituir Streamlit por otro framework, ni de añadir un backend aparte (Node, Express, FastAPI…).
 
-- Python 3.12.
+- Python 3.14.
 - Interfaz: Streamlit **con componentes React** para la parte visual (ver "Diseño de la interfaz"). Streamlit sigue siendo la app: `app.py` es el punto de entrada y toda la lógica (login, SQLite, Gemini, citas) vive en Python.
 - Frontend React: carpeta `frontend/` (React + Vite, opcionalmente Tailwind). Se compila a `frontend/dist/` y `app.py` lo carga con `streamlit.components.v1.declare_component`. **`frontend/dist/` se sube a git**, porque Streamlit Cloud no ejecuta Node ni compila. Node.js solo se usa en local para desarrollar y compilar.
 - IA: API de Gemini con el SDK `google-genai`. El modelo está en la constante `MODELO` de `app.py` (hoy `gemini-flash-lite-latest`, un alias que no caduca; `gemini-2.5-flash` ya no está disponible y `gemini-3.8-flash` daba 503 por alta demanda). Respuesta en JSON validado con pydantic; solo se aceptan ids que existan en el pool; si Gemini falla, el chat cae a una recomendación básica por palabras clave y avisa.
