@@ -1,7 +1,7 @@
 # Nubapp
 
 **Autor:** Jairo Peña
-**Enlace a la app (versión 0):** [pendiente, se añadirá cuando se cree la URL en Streamlit Cloud]
+**Enlace a la app (versión 0):** (https://nubapp-xydvqiwcxs97xbsrhfchvz.streamlit.app/)
 
 ## Qué es este proyecto
 
@@ -13,6 +13,7 @@ Nubapp es una app que ayuda a cualquier persona a agendar de forma fácil y ági
 - **Pacientes:** se inscriben y pueden buscar nutricionistas o usar un **chat con IA** que les hace unas pocas preguntas sobre su necesidad y les recomienda los nutricionistas más adecuados, explicando por qué.
 - **Agenda:** el paciente elige un hueco libre del nutricionista recomendado y confirma la cita. Ambos pueden verla en su panel.
 - **Pieza de IA:** el chat usa la API de Gemini. La IA solo orienta y recomienda perfiles; **no da diagnósticos ni planes de dieta ni consejo médico**.
+- **El chat solo está disponible con sesión iniciada.** La regla se aplica en Python (`app.py`), no solo en la interfaz; así también se protege la cuota de Gemini. Sin sesión, el chat lleva a "Entrar" y conserva el mensaje escrito.
 
 ## Alcance de la versión 0
 
@@ -29,10 +30,10 @@ Stack **muy básico**, a propósito. No añadas piezas que no hagan falta.
 - Python 3.12.
 - Interfaz: Streamlit **con componentes React** para la parte visual (ver "Diseño de la interfaz"). Streamlit sigue siendo la app: `app.py` es el punto de entrada y toda la lógica (login, SQLite, Gemini, citas) vive en Python.
 - Frontend React: carpeta `frontend/` (React + Vite, opcionalmente Tailwind). Se compila a `frontend/dist/` y `app.py` lo carga con `streamlit.components.v1.declare_component`. **`frontend/dist/` se sube a git**, porque Streamlit Cloud no ejecuta Node ni compila. Node.js solo se usa en local para desarrollar y compilar.
-- IA: API de Gemini con el SDK `google-genai`. El modelo está en la constante `MODELO` de `app.py`.
+- IA: API de Gemini con el SDK `google-genai`. El modelo está en la constante `MODELO` de `app.py` (hoy `gemini-flash-lite-latest`, un alias que no caduca; `gemini-2.5-flash` ya no está disponible y `gemini-3.8-flash` daba 503 por alta demanda). Respuesta en JSON validado con pydantic; solo se aceptan ids que existan en el pool; si Gemini falla, el chat cae a una recomendación básica por palabras clave y avisa.
 - Base de datos: **SQLite** (módulo `sqlite3` de la librería estándar, sin ORM). Funciona en Streamlit Cloud, pero su disco es **efímero**: se pierde al reiniciar o redesplegar. Por eso `app.py` crea las tablas y carga datos de ejemplo (seed) al arrancar si la base está vacía. Si más adelante hace falta persistencia real, se migrará a una base alojada (p. ej. Supabase), previa consulta.
 - Contraseñas: nunca en texto plano; se guardan con hash (`hashlib.scrypt` o `bcrypt`).
-- Archivos: `app.py` (toda la lógica en Python), `frontend/` (React; fuentes y `dist/` compilado), `requirements.txt`, `README.md`, `CLAUDE.md`, `.gitignore`. La base `nubapp.db` NO se sube a git.
+- Archivos: `app.py` (toda la lógica en Python), `frontend/` (React; fuentes y `dist/` compilado), `requirements.txt`, `README.md`, `CLAUDE.md`, `credenciales_prueba.md` (cuentas ficticias para probar los dos roles), `.gitignore`. La base `nubapp.db` NO se sube a git.
 - Cómo recomienda el chat: se le pasa a Gemini la necesidad del paciente junto con la lista de perfiles de nutricionistas (especialidades y servicios) y se le pide que devuelva los 1-3 más adecuados con una breve justificación. Solo puede recomendar nutricionistas que existan en el pool.
 - Idea base: `pre setup/idea.txt`.
 
@@ -44,7 +45,7 @@ Stack **muy básico**, a propósito. No añadas piezas que no hagan falta.
 - `nutricionista_especialidad`: `nutricionista_id`, `especialidad_id` (N:M).
 - `servicios`: `id`, `nutricionista_id`, `nombre`, `descripcion`, `duracion_min`, `precio`.
 - `disponibilidad`: `id`, `nutricionista_id`, `inicio` (datetime), `fin`, `reservado` (0/1).
-- `citas`: `id`, `paciente_id` (FK → `usuarios`), `nutricionista_id`, `servicio_id`, `disponibilidad_id` (único, evita doble reserva), `estado` (`confirmada` | `cancelada`), `motivo`, `creado_en`.
+- `citas`: `id`, `paciente_id` (FK → `usuarios`), `nutricionista_id`, `servicio_id`, `disponibilidad_id` (índice único solo entre citas `confirmada`: evita la doble reserva y permite reservar de nuevo un hueco tras cancelar), `estado` (`confirmada` | `cancelada`), `motivo`, `creado_en`.
 
 ## Diseño de la interfaz
 
@@ -75,6 +76,8 @@ Stack **muy básico**, a propósito. No añadas piezas que no hagan falta.
 ## Cómo comprobar que funciona
 
 - En local: `streamlit run app.py` (con `.streamlit/secrets.toml` que contenga `GEMINI_API_KEY`), o haz push y revisa la app en Streamlit Cloud.
+- Pruebas automáticas de la lógica: `pip install pytest` y `python -m pytest` (carpeta `tests/`). Las marcadas `ia` llaman a Gemini y se omiten si no hay clave, red o cuota. La interfaz se prueba a mano con el MCP `chrome-devtools`.
+- Si cambia el esquema de las tablas, sube `VERSION_DB` en `app.py`: al arrancar, una base con versión anterior se borra y se recrea con los datos de ejemplo.
 - Casos de prueba (entrada → lo que esperamos):
   1. "Soy ciclista y quiero mejorar mi rendimiento y recuperación" → recomienda nutricionistas con especialidad Deportivo y explica por qué.
   2. "Mi hija de 6 años come muy poco y es muy selectiva" → recomienda nutricionistas Pediátrico.
@@ -82,6 +85,9 @@ Stack **muy básico**, a propósito. No añadas piezas que no hagan falta.
   4. "¿Qué tiempo hará mañana?" (fuera de tema) → la app dice amablemente que solo puede ayudar a encontrar un nutricionista.
   5. Paciente elige un hueco ya ocupado → la app avisa y no permite la doble reserva.
   6. Registro con un correo ya existente → la app avisa de que ya hay una cuenta; login con contraseña incorrecta → mensaje claro, sin revelar qué dato falló.
+  7. Sin sesión, abrir el chat (menú o portada) → pide iniciar sesión y no llama a Gemini.
+  8. Nutricionista nuevo → no aparece en el listado hasta tener frase de presentación, una especialidad y al menos un servicio; al completarlo, aparece.
+  9. Paciente cancela una cita → el hueco vuelve a estar libre y se puede reservar de nuevo.
 
 ## Qué no hacer
 
@@ -95,5 +101,4 @@ Stack **muy básico**, a propósito. No añadas piezas que no hagan falta.
 
 ## Pendiente de confirmar
 
-- URL de la app en Streamlit Cloud (se creará próximamente; al tenerla, rellenar el enlace al inicio de este archivo y en el README).
 - Pagos, recordatorios por correo y videollamada integrada: fuera de la versión 0.
