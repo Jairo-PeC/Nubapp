@@ -159,7 +159,8 @@ select { font: inherit; border: 2px solid var(--line); border-radius: 12px; padd
 /* panel */
 .appts { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 10px; }
 .appts li { display: grid; grid-template-columns: 1.2fr 1.2fr 1fr auto; gap: 12px; align-items: center; background: var(--paper); border: 2px solid var(--ink); border-radius: 14px; padding: 12px 16px; }
-.appts time { font-weight: 700; text-transform: capitalize; }
+.appts time { font-weight: 700; }
+.appts time::first-letter { text-transform: uppercase; }
 .pill { background: var(--lime); border-radius: 999px; padding: 2px 12px; font-weight: 700; font-size: 0.8rem; text-transform: capitalize; }
 
 .foot { text-align: center; color: var(--ink-2); font-size: 0.85rem; padding-top: 24px; }

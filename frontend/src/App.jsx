@@ -504,7 +504,6 @@ function PerfilEditar({ args, ir }) {
               <option value="online">Online</option><option value="presencial">Presencial</option><option value="ambas">Online y presencial</option>
             </select>
           </label>
-          <label className="field"><span>Tarifa desde (US$)</span><input type="number" min="0" value={f.tarifa} onChange={set("tarifa")} /></label>
         </div>
         <p className="field-label">Tus especialidades</p>
         <div className="chips" role="group" aria-label="Especialidades">
